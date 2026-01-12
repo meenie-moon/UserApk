@@ -1,32 +1,21 @@
 [app]
-title = MoonTele
-package.name = moontele
+title = MoonTele Hybrid
+package.name = moontelehybrid
 package.domain = org.moon
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,json,session
+source.include_exts = py,png,jpg,kv,atlas,json,session,html,css,js
+source.include_patterns = templates/*
 version = 0.1
-requirements = python3,kivy==2.3.0,kivymd==1.2.0,telethon,pyaes,asyncio,openssl
+requirements = python3,kivy==2.3.0,telethon,pyaes,asyncio,openssl,flask,jinja2,pyjnius
 
 orientation = portrait
-osx.python_version = 3
-osx.kivy_version = 1.9.1
-
-fullscreen = 0
-android.permissions = INTERNET
+android.permissions = INTERNET,ACCESS_NETWORK_STATE
 
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
-android.ndk_path = 
-android.sdk_path = 
-android.ant_path = 
-
-android.skip_update = False
-android.accept_sdk_license = True
 android.enable_androidx = True
-
 android.archs = arm64-v8a
-android.allow_backup = True
 
 [buildozer]
 log_level = 2
