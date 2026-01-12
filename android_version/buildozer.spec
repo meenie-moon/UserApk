@@ -5,14 +5,14 @@ package.domain = org.moon
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json,session
 version = 0.1
-requirements = python3,kivy==2.3.0,kivymd==1.2.0,telethon,pyaes,asyncio
+requirements = python3,kivy==2.3.0,kivymd==1.2.0,telethon,pyaes,asyncio,openssl
 
 orientation = portrait
 osx.python_version = 3
 osx.kivy_version = 1.9.1
 
 fullscreen = 0
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE
+android.permissions = INTERNET
 
 android.api = 33
 android.minapi = 21

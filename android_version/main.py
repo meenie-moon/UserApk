@@ -12,7 +12,7 @@ from kivymd.uix.list import OneLineListItem, ThreeLineListItem, MDList
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.snackbar import Snackbar
 from kivymd.uix.menu import MDDropdownMenu
-from kivymd.uix.selectioncontrol import MDCheckbox
+from kivymd.uix.boxlayout import MDBoxLayout
 from kivy.clock import Clock
 from telethon import TelegramClient, errors, functions, types
 
@@ -20,16 +20,8 @@ from telethon import TelegramClient, errors, functions, types
 import pyaes 
 
 # --- Constants ---
-if platform == 'android':
-    from android.storage import primary_external_storage_path
-    DATA_DIR = os.path.join(primary_external_storage_path(), "MoonTele")
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-else:
-    DATA_DIR = "."
-
-ACCOUNTS_FILE = os.path.join(DATA_DIR, "accounts.json")
-TEMPLATE_FILE = os.path.join(DATA_DIR, "target_templates.json")
+ACCOUNTS_FILE_NAME = "accounts.json"
+TEMPLATE_FILE_NAME = "target_templates.json"
 
 KV = '''
 MDBoxLayout:
@@ -166,12 +158,12 @@ class MoonTeleApp(MDApp):
         self.templates = {}
         self.active_account = None
         self.client = None
-        self.loop = asyncio.get_event_loop()
         self.dialog = None
 
     def build(self):
         self.theme_cls.primary_palette = "Cyan"
         self.theme_cls.theme_style = "Dark"
+        self.data_dir = self.user_data_dir
         return Builder.load_string(KV)
 
     def on_start(self):
@@ -180,17 +172,25 @@ class MoonTeleApp(MDApp):
         self.refresh_template_list()
 
     def load_data(self):
-        if os.path.exists(ACCOUNTS_FILE):
-            with open(ACCOUNTS_FILE, 'r') as f:
-                self.accounts = json.load(f)
-        if os.path.exists(TEMPLATE_FILE):
-            with open(TEMPLATE_FILE, 'r') as f:
-                self.templates = json.load(f)
+        acc_path = os.path.join(self.data_dir, ACCOUNTS_FILE_NAME)
+        tpl_path = os.path.join(self.data_dir, TEMPLATE_FILE_NAME)
+        if os.path.exists(acc_path):
+            try:
+                with open(acc_path, 'r') as f:
+                    self.accounts = json.load(f)
+            except: pass
+        if os.path.exists(tpl_path):
+            try:
+                with open(tpl_path, 'r') as f:
+                    self.templates = json.load(f)
+            except: pass
 
     def save_data(self):
-        with open(ACCOUNTS_FILE, 'w') as f:
+        acc_path = os.path.join(self.data_dir, ACCOUNTS_FILE_NAME)
+        tpl_path = os.path.join(self.data_dir, TEMPLATE_FILE_NAME)
+        with open(acc_path, 'w') as f:
             json.dump(self.accounts, f, indent=4)
-        with open(TEMPLATE_FILE, 'w') as f:
+        with open(tpl_path, 'w') as f:
             json.dump(self.templates, f, indent=4)
 
     def switch_screen(self, screen_name):
@@ -212,18 +212,20 @@ class MoonTeleApp(MDApp):
         self.root.ids.active_account_label.text = f"Active: {acc['name']} ({acc['phone']})"
         self.refresh_account_list()
         self.switch_screen("home")
-        # Initialize client in background
-        self.loop.create_task(self.init_client(acc))
+        asyncio.create_task(self.init_client(acc))
 
     async def init_client(self, acc):
-        session_path = os.path.join(DATA_DIR, f"session_{acc['phone']}")
-        self.client = TelegramClient(session_path, acc['api_id'], acc['api_hash'])
-        await self.client.connect()
-        if not await self.client.is_user_authorized():
-            self.show_auth_dialog(acc['phone'])
-        else:
-            me = await self.client.get_me()
-            self.root.ids.status_label.text = f"Logged in as {me.first_name}"
+        session_path = os.path.join(self.data_dir, f"session_{acc['phone']}")
+        self.client = TelegramClient(session_path, int(acc['api_id']), acc['api_hash'])
+        try:
+            await self.client.connect()
+            if not await self.client.is_user_authorized():
+                self.show_auth_dialog(acc['phone'])
+            else:
+                me = await self.client.get_me()
+                self.root.ids.status_label.text = f"Logged in as {me.first_name}"
+        except Exception as e:
+            Snackbar(text=f"Connection error: {str(e)}").open()
 
     def show_auth_dialog(self, phone):
         content = MDTextField(hint_text="Enter Code")
@@ -240,7 +242,7 @@ class MoonTeleApp(MDApp):
 
     def finish_auth(self, phone, code):
         self.dialog.dismiss()
-        self.loop.create_task(self._finish_auth(phone, code))
+        asyncio.create_task(self._finish_auth(phone, code))
 
     async def _finish_auth(self, phone, code):
         try:
@@ -317,8 +319,6 @@ class MoonTeleApp(MDApp):
         self.show_template_details(name)
 
     def show_template_details(self, name):
-        # Simplified: list of targets with add button
-        # In a real app, this would be another screen.
         self.dialog = MDDialog(
             title=f"Template: {name}",
             text="Add targets via link or ID.",
@@ -345,12 +345,11 @@ class MoonTeleApp(MDApp):
 
     def resolve_and_add_target(self, template_name, input_str):
         self.dialog.dismiss()
-        self.loop.create_task(self._resolve_target(template_name, input_str))
+        asyncio.create_task(self._resolve_target(template_name, input_str))
 
     async def _resolve_target(self, template_name, input_str):
         if not self.client: return
         try:
-            # Re-using logic from MoonTele.py but simplified
             target_info = await self.resolve_logic(input_str)
             if target_info:
                 acc_phone = self.active_account['phone']
@@ -362,83 +361,22 @@ class MoonTeleApp(MDApp):
             Snackbar(text=f"Error: {str(e)}").open()
 
     async def resolve_logic(self, input_str):
-        """
-        Detects if input is User ID or Link, validates it, and returns target info.
-        Returns: dict or None
-        """
         input_str = input_str.strip()
-        
-        target_info = {
-            "chat_id": None,
-            "chat_title": None,
-            "topic_id": None,
-            "topic_title": None,
-            "type": "Unknown"
-        }
-
+        target_info = {"chat_id": None, "chat_title": None, "topic_id": None, "topic_title": None, "type": "Unknown"}
         try:
-            # 1. Check if input is purely numeric (User ID)
             if input_str.isdigit() or (input_str.startswith("-") and input_str[1:].isdigit()):
                 user_id = int(input_str)
                 entity = await self.client.get_entity(user_id)
                 target_info["chat_id"] = entity.id
-                target_info["chat_title"] = f"{entity.first_name} {entity.last_name or ''}".strip() if hasattr(entity, 'first_name') else (entity.title if hasattr(entity, 'title') else "Unknown")
-                target_info["type"] = "User/Chat"
+                target_info["chat_title"] = getattr(entity, 'title', 'User')
+                target_info["type"] = "User"
                 return target_info
-
-            # 2. Check if input is a Link
             elif "t.me/" in input_str:
-                clean_link = input_str.replace("https://", "").replace("http://", "").replace("t.me/", "")
-                parts = clean_link.split("/")
-                
-                chat_identifier = None
-                msg_id = None
-                topic_id_from_url = None
-
-                if parts[0] == "c":
-                    if len(parts) >= 3:
-                        chat_identifier = int(f"-100{parts[1]}")
-                        msg_id = int(parts[-1].split("?")[0])
-                        if len(parts) == 4:
-                            topic_id_from_url = int(parts[2])
-                else:
-                    chat_identifier = parts[0]
-                    if len(parts) > 1:
-                        msg_id = int(parts[-1].split("?")[0])
-
-                if not chat_identifier:
-                    return None
-
-                entity = await self.client.get_entity(chat_identifier)
+                entity = await self.client.get_entity(input_str)
                 target_info["chat_id"] = entity.id
-                target_info["chat_title"] = entity.title if hasattr(entity, 'title') else (entity.username or "Unknown")
-                target_info["type"] = "Group/Channel"
-
-                if msg_id:
-                    message = await self.client.get_messages(entity, ids=msg_id)
-                    if message:
-                        if message.reply_to and message.reply_to.forum_topic:
-                            target_info["topic_id"] = message.reply_to.reply_to_msg_id
-                        elif message.reply_to and message.reply_to.reply_to_msg_id:
-                            if getattr(entity, 'forum', False):
-                                target_info["topic_id"] = message.reply_to.reply_to_msg_id
-                        
-                        if topic_id_from_url:
-                            target_info["topic_id"] = topic_id_from_url
-
-                if target_info["topic_id"]:
-                    try:
-                        topic_start_msg = await self.client.get_messages(entity, ids=target_info["topic_id"])
-                        if topic_start_msg:
-                            if hasattr(topic_start_msg, 'action') and hasattr(topic_start_msg.action, 'title'):
-                                target_info["topic_title"] = topic_start_msg.action.title
-                            else:
-                                target_info["topic_title"] = topic_start_msg.text[:30] if topic_start_msg.text else f"Topic {target_info['topic_id']}"
-                    except:
-                        target_info["topic_title"] = f"Topic {target_info['topic_id']}"
-
+                target_info["chat_title"] = getattr(entity, 'title', 'Group')
+                target_info["type"] = "Group"
                 return target_info
-
         except Exception as e:
             print(f"Error resolving: {e}")
         return None
@@ -469,50 +407,32 @@ class MoonTeleApp(MDApp):
         if template_name == "Select Template":
             Snackbar(text="Please select a template").open()
             return
-        
         text = self.root.ids.broadcast_text.text
         if not text:
             Snackbar(text="Message cannot be empty").open()
             return
-
         delay = float(self.root.ids.broadcast_delay.text or 5)
-        self.loop.create_task(self._run_broadcast(template_name, text, delay))
+        asyncio.create_task(self._run_broadcast(template_name, text, delay))
 
     async def _run_broadcast(self, template_name, text, delay):
         acc_phone = self.active_account['phone']
         targets = self.templates[acc_phone][template_name]
-        
         self.root.ids.progress_bar.opacity = 1
         self.root.ids.progress_bar.max = len(targets)
-        
         count = 0
         for t in targets:
             self.root.ids.progress_label.text = f"Sending to {t['chat_title']}..."
             try:
-                if "t.me" in text:
-                    # Treat as link forward (simplified)
-                    # Real app would fetch msg_obj
-                    await self.client.send_message(t['chat_id'], text, reply_to=t['topic_id'])
-                else:
-                    await self.client.send_message(t['chat_id'], text, reply_to=t['topic_id'])
+                await self.client.send_message(t['chat_id'], text, reply_to=t['topic_id'])
                 count += 1
             except Exception as e:
-                print(f"Failed to send to {t['chat_title']}: {e}")
-            
+                print(f"Failed: {e}")
             self.root.ids.progress_bar.value = count
             await asyncio.sleep(delay)
-        
         self.root.ids.progress_label.text = f"Finished! Sent to {count}/{len(targets)} targets."
         self.root.ids.progress_bar.opacity = 0
         Snackbar(text="Broadcast Complete").open()
 
 if __name__ == "__main__":
-    import asyncio
-    loop = asyncio.get_event_loop()
     app = MoonTeleApp()
-    
-    # Kivy with Asyncio
-    async def run_app():
-        await app.async_run(async_lib='asyncio')
-    
-    loop.run_until_complete(run_app())
+    asyncio.run(app.async_run())
