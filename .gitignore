@@ -1,0 +1,16 @@
+# Sensitive files
+accounts.json
+target_templates.json
+session_*.session
+credentials.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Buildozer & Android
+.buildozer/
+bin/
+android_version/bin/
+android_version/.buildozer/
